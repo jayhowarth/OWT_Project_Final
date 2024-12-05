@@ -1,10 +1,6 @@
-import logging
+
 import os
 import numpy as np
-import pandas as pd
-from tqdm import tqdm
-import torch
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -90,193 +86,6 @@ def stratify_by_day_and_mass(predictions, targets, days, samples_per_day, mass_b
     
     return np.array(selected_preds), np.array(selected_targets), np.array(selected_days)
 
-def stratify_by_day_best_predictions(predictions, targets, days, samples_per_day):
-    """
-    Stratify predictions and targets by day, then select the best predictions (smallest residuals) for each day.
-    
-    Parameters:
-        predictions (np.ndarray): Array of predicted values.
-        targets (np.ndarray): Array of actual target values.
-        days (np.ndarray): Array indicating the day for each sample.
-        samples_per_day (int): Number of best predictions to select for each day.
-    
-    Returns:
-        np.ndarray, np.ndarray, np.ndarray: Arrays of selected predictions, targets, and days.
-    """
-    selected_preds = []
-    selected_targets = []
-    selected_days = []
-
-    unique_days = np.unique(days)
-
-    for day in unique_days:
-        # Get indices for the current day
-        day_indices = np.where(days == day)[0]
-        day_predictions = predictions[day_indices]
-        day_targets = targets[day_indices]
-        
-        # Compute residuals
-        residuals = np.abs(day_predictions - day_targets)
-        
-        # Sort by residuals and select the best samples
-        sorted_indices = day_indices[np.argsort(residuals)]
-        best_indices = sorted_indices[:samples_per_day]
-        
-        # Add the selected samples to the output
-        selected_preds.extend(predictions[best_indices])
-        selected_targets.extend(targets[best_indices])
-        selected_days.extend(days[best_indices])
-
-    return np.array(selected_preds), np.array(selected_targets), np.array(selected_days)
-
-
-def stratify_by_day_filter(predictions, targets, days):
-    """
-    Select the top 80% of predictions based on the lowest residuals, 
-    then stratify predictions and targets by day, and sample a fixed number of readings per day.
-
-    Parameters:
-        predictions (np.ndarray): Array of predicted values.
-        targets (np.ndarray): Array of actual target values.
-        days (np.ndarray): Array indicating the day for each sample.
-        samples_per_day (int): Number of samples to select for each day.
-
-    Returns:
-        np.ndarray, np.ndarray, np.ndarray: Arrays of selected predictions, targets, and days.
-    """
-    # Calculate residuals
-    residuals = np.abs(predictions - targets)
-    
-    # Determine the cutoff for the top 80% of the lowest residuals
-    cutoff = np.percentile(residuals, 80)
-    
-    # Mask for the top 80% values
-    top_80_mask = residuals <= cutoff
-    filtered_predictions = predictions[top_80_mask]
-    filtered_targets = targets[top_80_mask]
-    filtered_days = days[top_80_mask]
-
-    return filtered_predictions, filtered_targets, filtered_days
-
-def stratify_by_day_y(predictions, targets, days, samples_per_day):
-    """
-    Select the top 75% of predictions based on the lowest residuals and 
-    randomly sample 15% of the remainder 25%, then stratify predictions and 
-    targets by day, and sample a fixed number of readings per day.
-
-    Parameters:
-        predictions (np.ndarray): Array of predicted values.
-        targets (np.ndarray): Array of actual target values.
-        days (np.ndarray): Array indicating the day for each sample.
-        samples_per_day (int): Number of samples to select for each day.
-
-    Returns:
-        np.ndarray, np.ndarray, np.ndarray: Arrays of selected predictions, targets, and days.
-    """
-    # Calculate residuals
-    residuals = np.abs(predictions - targets)
-    
-    # Determine the cutoff for the top 75% of the lowest residuals
-    cutoff_75 = np.percentile(residuals, 75)
-    top_75_mask = residuals <= cutoff_75
-    
-    # Filter top 75% data
-    top_75_predictions = predictions[top_75_mask]
-    top_75_targets = targets[top_75_mask]
-    top_75_days = days[top_75_mask]
-    
-    # Filter remaining 25% data
-    remaining_25_mask = ~top_75_mask
-    remaining_predictions = predictions[remaining_25_mask]
-    remaining_targets = targets[remaining_25_mask]
-    remaining_days = days[remaining_25_mask]
-    
-    # Randomly select 15% of the remaining 25%
-    num_to_sample = int(0.15 * len(remaining_predictions))
-    sampled_indices = np.random.choice(len(remaining_predictions), num_to_sample, replace=False)
-    
-    sampled_predictions = remaining_predictions[sampled_indices]
-    sampled_targets = remaining_targets[sampled_indices]
-    sampled_days = remaining_days[sampled_indices]
-    
-    # Combine the top 75% with the sampled 15% of the remaining 25%
-    combined_predictions = np.concatenate([top_75_predictions, sampled_predictions])
-    combined_targets = np.concatenate([top_75_targets, sampled_targets])
-    combined_days = np.concatenate([top_75_days, sampled_days])
-    
-    selected_preds = []
-    selected_targets = []
-    selected_days = []
-    
-    unique_days = np.unique(combined_days)
-    
-    for day in unique_days:
-        day_indices = np.where(combined_days == day)[0]
-        
-        if len(day_indices) >= samples_per_day:
-            sampled_indices = np.random.choice(day_indices, samples_per_day, replace=False)
-        else:
-            sampled_indices = day_indices
-            print(f"Warning: Day '{day}' has only {len(day_indices)} samples, less than {samples_per_day}.")
-        
-        # Append the selected samples for this day to the cumulative lists
-        selected_preds.extend(combined_predictions[sampled_indices])
-        selected_targets.extend(combined_targets[sampled_indices])
-        selected_days.extend(combined_days[sampled_indices])
-    
-    # Return the accumulated arrays
-    return np.array(selected_preds), np.array(selected_targets), np.array(selected_days)
-
-def stratify_by_day_x(predictions, targets, days, samples_per_day):
-    """
-    Select the top 80% of predictions based on the lowest residuals, 
-    then stratify predictions and targets by day, and sample a fixed number of readings per day.
-
-    Parameters:
-        predictions (np.ndarray): Array of predicted values.
-        targets (np.ndarray): Array of actual target values.
-        days (np.ndarray): Array indicating the day for each sample.
-        samples_per_day (int): Number of samples to select for each day.
-
-    Returns:
-        np.ndarray, np.ndarray, np.ndarray: Arrays of selected predictions, targets, and days.
-    """
-    # Calculate residuals
-    residuals = np.abs(predictions - targets)
-    
-    # Determine the cutoff for the top 80% of the lowest residuals
-    cutoff = np.percentile(residuals, 80)
-    
-    # Mask for the top 80% values
-    top_80_mask = residuals <= cutoff
-    filtered_predictions = predictions[top_80_mask]
-    filtered_targets = targets[top_80_mask]
-    filtered_days = days[top_80_mask]
-
-    selected_preds = []
-    selected_targets = []
-    selected_days = []
-    
-    unique_days = np.unique(filtered_days)
-    
-    for day in unique_days:
-        day_indices = np.where(filtered_days == day)[0]
-        
-        if len(day_indices) >= samples_per_day:
-            sampled_indices = np.random.choice(day_indices, samples_per_day, replace=False)
-        else:
-            sampled_indices = day_indices
-            print(f"Warning: Day '{day}' has only {len(day_indices)} samples, less than {samples_per_day}.")
-        
-        # Append the selected samples for this day to the cumulative lists
-        selected_preds.extend(filtered_predictions[sampled_indices])
-        selected_targets.extend(filtered_targets[sampled_indices])
-        selected_days.extend(filtered_days[sampled_indices])
-    
-    # Return the accumulated arrays
-    return np.array(selected_preds), np.array(selected_targets), np.array(selected_days)
-
-
 def plot_distributions(targets, preds, plot_dir):
     """
     Plots histograms of actual and predicted mass values.
@@ -328,54 +137,23 @@ def plot_predictions(model, all_preds, all_targets, all_days, device, feature_sc
     """
     Generates Actual vs Predicted Mass plot without color map or legend.
     """
-    model.eval()
-    # all_preds = []
-    # all_targets = []
-    # all_days = []
-    
-    # for X_batch, y_batch in tqdm(val_loader, desc='Predicting'):
-    #     X_batch = X_batch.to(device)
-    #     with torch.no_grad():
-    #         preds = model(X_batch)
-    #     all_preds.extend(preds.cpu().numpy().flatten())
-    #     all_targets.extend(y_batch.numpy().flatten())
-    #     # To correctly map days, ensure the indices align
-    #     start_idx = len(all_preds) - len(X_batch)
-    #     end_idx = start_idx + len(X_batch)
-    #     all_days.extend(val_loader.dataset.days[start_idx:end_idx])
-    
-    # all_preds = np.array(all_preds)
-    # all_targets = np.array(all_targets)
-    
-    # # Apply Inverse Transform
-    # all_preds = target_scaler.inverse_transform(all_preds.reshape(-1, 1)).flatten()
-    # all_targets = target_scaler.inverse_transform(all_targets.reshape(-1, 1)).flatten()
-    
-    # Debugging: Print min and max values
-    # print(f"Actual Mass - Min: {all_targets.min()}, Max: {all_targets.max()}")
-    # print(f"Predicted Mass - Min: {all_preds.min()}, Max: {all_preds.max()}")
-    preds_strat, targets_strat, days_strat = stratify_by_day_filter(
+    # model.eval()
+    preds_strat, targets_strat, days_strat = stratify_by_day(
         predictions=all_preds,
         targets=all_targets,
         days=all_days,
+        samples_per_day=200,
     )
 
     
     # Plot Actual vs Predicted
     plt.figure(figsize=(10, 6))
-    # plt.scatter(
-    #     all_targets, 
-    #     all_preds, 
-    #     alpha=0.5, 
-    #     s=10, 
-    #     color="green"  # Single color for points
-    # )
     sns.scatterplot(
         x=targets_strat,
         y=preds_strat,
-        alpha=0.4,  # Transparency of points
-        s=12,       # Size of points
-        color="green"  # Single color for points
+        alpha=0.4,
+        s=12,
+        color="green"
     )
     
     
@@ -403,30 +181,7 @@ def plot_predictions_stratified(model, all_preds, all_targets, all_days, device,
     """
     Generates Actual vs Predicted Mass plot with stratified sampling.
     """
-    model.eval()
-    # all_preds = []
-    # all_targets = []
-    # all_days = []
-    
-    # for X_batch, y_batch in tqdm(val_loader, desc='Predicting'):
-    #     X_batch = X_batch.to(device)
-    #     with torch.no_grad():
-    #         preds = model(X_batch)
-    #     all_preds.extend(preds.cpu().numpy().flatten())
-    #     all_targets.extend(y_batch.numpy().flatten())
-    #     # To correctly map days, ensure the indices align
-    #     start_idx = len(all_preds) - len(X_batch)
-    #     end_idx = start_idx + len(X_batch)
-    #     all_days.extend(val_loader.dataset.days[start_idx:end_idx])
-    
-    # all_preds = np.array(all_preds)
-    # all_targets = np.array(all_targets)
-    # all_days = np.array(all_days)
-    
-    # # Apply Inverse Transform
-    # all_preds = target_scaler.inverse_transform(all_preds.reshape(-1, 1)).flatten()
-    # all_targets = target_scaler.inverse_transform(all_targets.reshape(-1, 1)).flatten()
-    
+
     # Debugging: Print min and max values
     print(f"Actual Mass - Min: {all_targets.min()}, Max: {all_targets.max()}")
     print(f"Predicted Mass - Min: {all_preds.min()}, Max: {all_preds.max()}")
@@ -436,7 +191,7 @@ def plot_predictions_stratified(model, all_preds, all_targets, all_days, device,
     
     # Stratified Sampling: Fixed number of samples per day and mass bin
     print("Stratifying samples by day and mass bins...")
-    preds_strat, targets_strat, days_strat = stratify_by_day_x(
+    preds_strat, targets_strat, days_strat = stratify_by_day(
         predictions=all_preds, 
         targets=all_targets, 
         days=all_days, 
@@ -497,47 +252,17 @@ def plot_residuals(model, all_preds, all_targets, all_days, device, feature_scal
     Generates Residual Plot.
     """
     model.eval()
-    # all_preds = []
-    # all_targets = []
-    # all_days = []
-    
-    # for X_batch, y_batch in tqdm(val_loader, desc='Predicting for Residuals'):
-    #     X_batch = X_batch.to(device)
-    #     with torch.no_grad():
-    #         preds = model(X_batch)
-    #     all_preds.extend(preds.cpu().numpy().flatten())
-    #     all_targets.extend(y_batch.numpy().flatten())
-    #     # To correctly map days, ensure the indices align
-    #     start_idx = len(all_preds) - len(X_batch)
-    #     end_idx = start_idx + len(X_batch)
-    #     all_days.extend(val_loader.dataset.days[start_idx:end_idx])
-    
-    # all_preds = np.array(all_preds)
-    # all_targets = np.array(all_targets)
-    # all_days = np.array(all_days)
-    
-    # Apply Inverse Transform
-    # all_preds = target_scaler.inverse_transform(all_preds.reshape(-1, 1)).flatten()
-    # all_targets = target_scaler.inverse_transform(all_targets.reshape(-1, 1)).flatten()
-    
-    preds_strat, targets_strat, days_strat = stratify_by_day_x(
+    preds_strat, targets_strat, days_strat = stratify_by_day(
         predictions=all_preds, 
         targets=all_targets, 
         days=all_days, 
         samples_per_day=300 
     )
-    # preds_strat, targets_strat, days_strat = stratify_by_day_best_predictions(
-    #     predictions=all_preds, 
-    #     targets=all_targets, 
-    #     days=all_days, 
-    #     samples_per_day=300,
-    #     # mass_bins=50
-    # )
+
     # Calculate Residuals
     residuals = targets_strat - preds_strat
     full_residuals = all_targets - all_preds
-    print(len(residuals))
-    print(len(full_residuals))
+
     # Plot Residuals Distribution
 
     plt.figure(figsize=(12, 6))
@@ -550,15 +275,14 @@ def plot_residuals(model, all_preds, all_targets, all_days, device, feature_scal
     plt.title('Residuals Distribution')
     plt.xlabel('Residual (g)')
     plt.ylabel('Frequency')
-    plt.show()
     
     # Scatter plot of residuals vs actual
     plt.subplot(1, 2, 2)
     # plt.scatter(all_targets, residuals, alpha=0.5, s=10, color='purple')
     
     sns.scatterplot(
-    x=targets_strat,
-    y=residuals,
+    x=all_targets,
+    y=full_residuals,
     alpha=0.4,  
     s=12,       
     color="purple"  
@@ -567,9 +291,6 @@ def plot_residuals(model, all_preds, all_targets, all_days, device, feature_scal
     plt.title('Residuals vs Actual Mass')
     plt.xlabel('Actual Mass (g)')
     plt.ylabel('Residual (g)')
-    
-    
-    
     plt.tight_layout()
     plt.savefig(os.path.join(plot_dir, 'residuals_analysis.png'))
     plt.close()
@@ -579,30 +300,6 @@ def plot_log_residuals(model, all_preds, all_targets, all_days, device, feature_
     """
     Generates Residual Plot with natural logarithm transformation and downsampling.
     """
-    model.eval()
-    # all_preds = []
-    # all_targets = []
-    # all_days = []
-
-    # for X_batch, y_batch in tqdm(val_loader, desc='Predicting for Residuals'):
-    #     X_batch = X_batch.to(device)
-    #     with torch.no_grad():
-    #         preds = model(X_batch)
-    #     all_preds.extend(preds.cpu().numpy().flatten())
-    #     all_targets.extend(y_batch.numpy().flatten())
-    #     # To correctly map days, ensure the indices align
-    #     start_idx = len(all_preds) - len(X_batch)
-    #     end_idx = start_idx + len(X_batch)
-    #     all_days.extend(val_loader.dataset.days[start_idx:end_idx])
-
-    # all_preds = np.array(all_preds)
-    # all_targets = np.array(all_targets)
-    # all_days = np.array(all_days)
-
-    # # Apply Inverse Transform
-    # all_preds = target_scaler.inverse_transform(all_preds.reshape(-1, 1)).flatten()
-    # all_targets = target_scaler.inverse_transform(all_targets.reshape(-1, 1)).flatten()
-
     # Calculate Residuals
     residuals = all_targets - all_preds
 
@@ -611,7 +308,7 @@ def plot_log_residuals(model, all_preds, all_targets, all_days, device, feature_
 
     # Stratified Sampling: Downsample residuals
     print("Stratifying residuals by day and mass bins...")
-    preds_strat, targets_strat, days_strat = stratify_by_day_x(
+    preds_strat, targets_strat, days_strat = stratify_by_day(
         predictions=all_preds,
         targets=all_targets,
         days=all_days,
@@ -646,3 +343,49 @@ def plot_log_residuals(model, all_preds, all_targets, all_days, device, feature_
     plt.savefig(os.path.join(plot_dir, 'log_transformed_residuals_analysis.png'))
     plt.close()
     print("Log-transformed residuals analysis plots saved.")
+
+
+def plot_loss_curves(history, plot_dir):
+    """
+    Plots training and validation loss curves.
+    """
+    plt.figure(figsize=(10, 6))
+    plt.plot(history['train_loss'], label='Train Loss')
+    plt.plot(history['val_loss'], label='Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Training and Validation Loss Curves')
+    plt.legend()
+    os.makedirs(plot_dir, exist_ok=True)
+    plt.savefig(os.path.join(plot_dir, 'loss_curves.png'))
+    plt.close()
+    print("Loss curves plot saved.")
+
+
+def plot_validation_metrics(history, plot_dir):
+    """
+    Plots MAE and R² over epochs.
+    """
+    plt.figure(figsize=(12, 5))
+
+    # MAE
+    plt.subplot(1, 2, 1)
+    plt.plot(history['val_mae'], label='Validation MAE', color='orange')
+    plt.xlabel('Epoch')
+    plt.ylabel('MAE')
+    plt.title('Validation MAE Over Epochs')
+    plt.legend()
+
+    # R² Score
+    plt.subplot(1, 2, 2)
+    plt.plot(history['val_r2'], label='Validation R²', color='green')
+    plt.xlabel('Epoch')
+    plt.ylabel('R² Score')
+    plt.title('Validation R² Over Epochs')
+    plt.legend()
+
+    plt.tight_layout()
+    os.makedirs(plot_dir, exist_ok=True)
+    plt.savefig(os.path.join(plot_dir, 'validation_metrics.png'))
+    plt.close()
+    print("Validation metrics plot saved.")
