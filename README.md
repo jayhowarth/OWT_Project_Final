@@ -47,6 +47,7 @@ Ensure the following are installed:
 
 1. Extract and copy code folder:
    ```bash
+   git clone https://github.com/jayhowarth/OWT_Project_Final.git
    cd folder_name
 
 2. Install Dependencies
